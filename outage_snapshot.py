@@ -16,7 +16,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
 
 # --- Configuration ---
 DEFAULT_OUTPUT_DIR = Path("/home/runcloud/outage_reports")
@@ -189,6 +189,34 @@ def collect_sar_data(output_dir: Path, start_dt: datetime, end_dt: datetime) -> 
     return results
 
 
+def get_log_paths_from_handler_conf(app_name: str) -> Dict[str, Path]:
+    """Parses the LiteSpeed handler.conf to find log paths."""
+    handler_conf_path = Path(f"/etc/lsws-rc/conf.d/{app_name}.d/handler.conf")
+    log_paths = {}
+
+    if not handler_conf_path.is_file():
+        print(f"   - ℹ️  Handler config not found at {handler_conf_path}, using default log paths.")
+        return log_paths
+
+    print(f"   - ℹ️  Parsing {handler_conf_path} for log locations...")
+    try:
+        content = handler_conf_path.read_text()
+        errorlog_match = re.search(r"^\s*errorlog\s+([^\s{]+)", content, re.MULTILINE)
+        accesslog_match = re.search(r"^\s*accesslog\s+([^\s{]+)", content, re.MULTILINE)
+
+        if errorlog_match:
+            log_paths["litespeed_error"] = Path(errorlog_match.group(1))
+            print(f"     - Found error log: {log_paths['litespeed_error']}")
+        if accesslog_match:
+            log_paths["litespeed_access"] = Path(accesslog_match.group(1))
+            print(f"     - Found access log: {log_paths['litespeed_access']}")
+
+    except Exception as e:
+        print(f"   - ⚠️  Could not read or parse handler.conf: {e}")
+
+    return log_paths
+
+
 def collect_config_files(output_dir: Path, app_name: str, php_version: str) -> dict:
     print("\n[+] Collecting LiteSpeed and PHP configuration files...")
     results = {}
@@ -263,34 +291,37 @@ def main():
     collection_results = {"report_directory": str(report_dir)}
 
     print("\n[+] Collecting application log slices...")
-    logs_to_collect = { 
-        "litespeed_access": { 
-            "path": args.log_dir / f"{args.app_name}_access.log", 
-            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]', 
-            "format": '%d/%b/%Y:%H:%M:%S %z' 
-        }, 
-        "litespeed_error": { 
-            "path": args.log_dir / f"{args.app_name}_error.log", 
-            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', 
-            "format": '%Y-%m-%d %H:%M:%S' 
+    # Get log paths from handler.conf if available
+    handler_log_paths = get_log_paths_from_handler_conf(args.app_name)
+
+    logs_to_collect = {
+        "litespeed_access": {
+            "path": handler_log_paths.get("litespeed_access", args.log_dir / f"{args.app_name}_access.log"),
+            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]',
+            "format": '%d/%b/%Y:%H:%M:%S %z'
+        },
+        "litespeed_error": {
+            "path": handler_log_paths.get("litespeed_error", args.log_dir / f"{args.app_name}_error.log"),
+            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})',
+            "format": '%Y-%m-%d %H:%M:%S'
         },
         "litespeed_access_alt": {
             "path": DEFAULT_LITESPEED_LOG_DIR / f"{args.app_name}.access.log",
-            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]', 
+            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]',
             "format": '%d/%b/%Y:%H:%M:%S %z'
         },
         "litespeed_error_alt": {
             "path": DEFAULT_LITESPEED_LOG_DIR / f"{args.app_name}.error.log",
-            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', 
+            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})',
             "format": '%Y-%m-%d %H:%M:%S'
         },
-        "php_fpm_slow": { 
-            "path": Path(f"/var/log/php/php{args.php_version}-fpm-slow.log"), 
-            "regex": r'^\[(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2})\]', 
-            "format": '%d-%b-%Y %H:%M:%S' 
-        } 
+        "php_fpm_slow": {
+            "path": Path(f"/var/log/php/php{args.php_version}-fpm-slow.log"),
+            "regex": r'^(\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}\])',
+            "format": '%d-%b-%Y %H:%M:%S'
+        }
     }
-    
+
     collection_results["logs"] = {}
     for name, config in logs_to_collect.items():
         content = parse_log_slice(config["path"], start_dt, end_dt, config["regex"], config["format"])
