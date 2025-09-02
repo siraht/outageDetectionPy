@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 """
-Outage Snapshot Collector (Multi-Site Enhanced)
+Outage Snapshot Collector (Multi-Site Enhanced) - LiteSpeed Edition
 
 A Python script to collect system logs, performance data, configuration files,
 and any source files modified during an outage window.
+Designed for LiteSpeed web server environments.
 """
 
 import argparse
@@ -20,25 +21,24 @@ from typing import Optional, Tuple
 # --- Configuration ---
 DEFAULT_OUTPUT_DIR = Path("/home/runcloud/outage_reports")
 DEFAULT_LOG_DIR = Path("/home/runcloud/logs")
-DEFAULT_NGINX_CONF_DIR = Path("/etc/nginx-rc/conf.d")
-DEFAULT_PHP_CONF_BASE = Path("/etc/php-rc")
+DEFAULT_LITESPEED_CONF_DIR = Path("/usr/local/lsws/conf/vhosts")
+DEFAULT_LITESPEED_LOG_DIR = Path("/usr/local/lsws/logs")
+DEFAULT_PHP_CONF_BASE = Path("/etc/php-rc")  # RunCloud PHP configs
+DEFAULT_LSPHP_BASE = Path("/usr/local/lsws")  # LiteSpeed PHP configs
 
 
 def setup_arg_parser() -> argparse.ArgumentParser:
     """Sets up the command-line argument parser."""
     parser = argparse.ArgumentParser(
-        description="Collect snapshot data for a web application outage.",
+        description="Collect snapshot data for a web application outage (LiteSpeed Edition).",
         formatter_class=argparse.RawTextHelpFormatter
     )
-    # --- Arguments from previous version ---
     parser.add_argument("--app-name", type=str, required=True, help="The RunCloud application name.")
     parser.add_argument("--start", type=str, required=True, help="Outage start time 'YYYY-MM-DD HH:MM:SS'.")
     parser.add_argument("--end", type=str, required=True, help="Outage end time 'YYYY-MM-DD HH:MM:SS'.")
     parser.add_argument("--php-version", type=str, default="8.2", help="The PHP version of the application.")
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Base directory for reports.")
     parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIR, help="Base directory for app logs.")
-
-    # --- NEW ARGUMENT ---
     parser.add_argument(
         "--app-path",
         type=Path,
@@ -48,7 +48,7 @@ def setup_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def run_command(command: list[str]) -> Tuple[bool, str, str]:
+def run_command(command: list):
     """Executes a shell command and returns its success status, stdout, and stderr."""
     try:
         process = subprocess.run(
@@ -117,7 +117,6 @@ def collect_modified_files(
     start_str = start_dt.strftime('%Y-%m-%d %H:%M:%S')
     end_str = end_dt.strftime('%Y-%m-%d %H:%M:%S')
     
-    # The `find` command is perfect for this task
     cmd = [
         "find", str(app_path),
         "-type", "f",
@@ -139,7 +138,6 @@ def collect_modified_files(
 
     print(f"   - Found {len(modified_files)} modified file(s). Copying...")
     
-    # Create a subdirectory to store the copied files
     dest_dir = output_dir / "modified_files"
     dest_dir.mkdir()
     
@@ -149,16 +147,13 @@ def collect_modified_files(
         for file_str in modified_files:
             if not file_str: continue
             
-            # Create a full Path object
             source_file = Path(file_str)
-            
-            # Recreate the directory structure within our destination
             relative_path = source_file.relative_to(app_path)
             dest_file_path = dest_dir / relative_path
             dest_file_path.parent.mkdir(parents=True, exist_ok=True)
             
             try:
-                shutil.copy2(source_file, dest_file_path) # copy2 preserves metadata
+                shutil.copy2(source_file, dest_file_path)
                 f.write(f"{file_str}\n")
                 results["copied_files"].append(str(dest_file_path))
             except Exception as e:
@@ -195,15 +190,37 @@ def collect_sar_data(output_dir: Path, start_dt: datetime, end_dt: datetime) -> 
 
 
 def collect_config_files(output_dir: Path, app_name: str, php_version: str) -> dict:
-    print("\n[+] Collecting configuration files...")
+    print("\n[+] Collecting LiteSpeed and PHP configuration files...")
     results = {}
-    nginx_conf_path = DEFAULT_NGINX_CONF_DIR / f"{app_name}.conf"
-    if nginx_conf_path.is_file():
-        shutil.copy(nginx_conf_path, output_dir)
-        results["nginx_config"] = str(output_dir / nginx_conf_path.name)
-        print(f"   - ✅ Copied Nginx config: {nginx_conf_path.name}")
+    
+    # LiteSpeed Virtual Host Configuration
+    vhost_conf_path = DEFAULT_LITESPEED_CONF_DIR / f"{app_name}.conf"
+    if vhost_conf_path.is_file():
+        try:
+            shutil.copy(vhost_conf_path, output_dir)
+            results["litespeed_vhost_config"] = str(output_dir / vhost_conf_path.name)
+            print(f"   - ✅ Copied LiteSpeed VHost config: {vhost_conf_path.name}")
+        except PermissionError:
+            results["litespeed_vhost_config"] = "Access denied (requires root/lsadm permissions)"
+            print(f"   - ⚠️  Cannot access LiteSpeed VHost config: Permission denied")
     else:
-        results["nginx_config"] = "Not found"
+        results["litespeed_vhost_config"] = "Not found"
+        print(f"   - ⚠️  LiteSpeed VHost config not found: {vhost_conf_path}")
+
+    # Main LiteSpeed Configuration (if accessible)
+    main_conf_path = Path("/usr/local/lsws/conf/httpd_config.conf")
+    if main_conf_path.is_file():
+        try:
+            shutil.copy(main_conf_path, output_dir / "litespeed_main_config.conf")
+            results["litespeed_main_config"] = str(output_dir / "litespeed_main_config.conf")
+            print(f"   - ✅ Copied LiteSpeed main config")
+        except PermissionError:
+            results["litespeed_main_config"] = "Access denied (requires root/lsadm permissions)"
+            print(f"   - ⚠️  Cannot access LiteSpeed main config: Permission denied")
+    else:
+        results["litespeed_main_config"] = "Not found"
+
+    # PHP-FPM Configuration (RunCloud style)
     php_conf_path = DEFAULT_PHP_CONF_BASE / php_version / "fpm/pool.d" / f"{app_name}.conf"
     if php_conf_path.is_file():
         shutil.copy(php_conf_path, output_dir)
@@ -211,6 +228,22 @@ def collect_config_files(output_dir: Path, app_name: str, php_version: str) -> d
         print(f"   - ✅ Copied PHP-FPM config: {php_conf_path.name}")
     else:
         results["php_fpm_config"] = "Not found"
+        print(f"   - ⚠️  PHP-FPM config not found: {php_conf_path}")
+
+    # LiteSpeed PHP Configuration
+    lsphp_conf_path = DEFAULT_LSPHP_BASE / f"lsphp{php_version.replace('.', '')}" / "etc" / "php" / php_version / "litespeed" / "php.ini"
+    if lsphp_conf_path.is_file():
+        try:
+            shutil.copy(lsphp_conf_path, output_dir / f"lsphp{php_version}_config.ini")
+            results["lsphp_config"] = str(output_dir / f"lsphp{php_version}_config.ini")
+            print(f"   - ✅ Copied LSPHP config: lsphp{php_version}_config.ini")
+        except Exception as e:
+            results["lsphp_config"] = f"Error copying: {e}"
+            print(f"   - ⚠️  Error copying LSPHP config: {e}")
+    else:
+        results["lsphp_config"] = "Not found"
+        print(f"   - ⚠️  LSPHP config not found: {lsphp_conf_path}")
+
     return results
 
 
@@ -231,16 +264,26 @@ def main():
 
     print("\n[+] Collecting application log slices...")
     logs_to_collect = { 
-        "nginx_access": { 
-            "path": args.log_dir / f"{args.app_name}_nginx_access.log", 
-            "regex": r'\[(.*?)\]', 
+        "litespeed_access": { 
+            "path": args.log_dir / f"{args.app_name}_access.log", 
+            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]', 
             "format": '%d/%b/%Y:%H:%M:%S %z' 
         }, 
-        "nginx_error": { 
-            "path": args.log_dir / f"{args.app_name}_nginx_error.log", 
-            "regex": r'^(\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2})', 
-            "format": '%Y/%m/%d %H:%M:%S' 
-        }, 
+        "litespeed_error": { 
+            "path": args.log_dir / f"{args.app_name}_error.log", 
+            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', 
+            "format": '%Y-%m-%d %H:%M:%S' 
+        },
+        "litespeed_access_alt": {
+            "path": DEFAULT_LITESPEED_LOG_DIR / f"{args.app_name}.access.log",
+            "regex": r'^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}) - - \[([^\]]+)\]', 
+            "format": '%d/%b/%Y:%H:%M:%S %z'
+        },
+        "litespeed_error_alt": {
+            "path": DEFAULT_LITESPEED_LOG_DIR / f"{args.app_name}.error.log",
+            "regex": r'^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})', 
+            "format": '%Y-%m-%d %H:%M:%S'
+        },
         "php_fpm_slow": { 
             "path": Path(f"/var/log/php/php{args.php_version}-fpm-slow.log"), 
             "regex": r'^\[(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2})\]', 
@@ -259,7 +302,7 @@ def main():
         else:
             collection_results["logs"][name] = "No relevant entries or file missing."
 
-    # --- CALL THE NEW AND EXISTING FUNCTIONS ---
+    # Collect all data
     collection_results["modified_files_data"] = collect_modified_files(report_dir, args.app_path, start_dt, end_dt)
     collection_results["sar_data"] = collect_sar_data(report_dir, start_dt, end_dt)
     collection_results["configs"] = collect_config_files(report_dir, args.app_name, args.php_version)

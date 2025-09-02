@@ -1,5 +1,14 @@
-# Configuration file for multi-site outage detection
+# Configuration file for multi-site outage detection (LiteSpeed Edition)
 # Format: AppName PHPVersion WebAppPath URL
-# Example entries:
-my-cool-site 8.1 /home/runcloud/webapps/my-cool-site https://my-cool-site.com
-another-site 8.2 /home/runcloud/webapps/another-site https://another-site.com
+#
+# Parameters:
+# - AppName: Unique identifier for the application (used in logs and reports)
+# - PHPVersion: PHP version (e.g., 8.1, 8.2, 8.3) - used for LSPHP and PHP-FPM configs
+# - WebAppPath: Absolute path to the web application's root directory
+# - URL: Full URL to monitor (including https:// or http://)
+#
+# Example entries for LiteSpeed web server:
+my-website 8.1 /home/runcloud/webapps/my-website https://my-website.com
+api-service 8.2 /home/runcloud/webapps/api-service https://api.my-website.com
+blog-site 7.4 /home/runcloud/webapps/blog-site https://blog.my-website.com
+ecommerce-store 8.3 /home/runcloud/webapps/ecommerce-store https://store.my-website.com
