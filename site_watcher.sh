@@ -9,10 +9,10 @@
 
 # --- CONFIGURATION ---
 # The path to the file containing the list of sites to monitor.
-SITES_CONFIG_FILE="/root/outageDetectionPy/watcher_sites.conf"
+SITES_CONFIG_FILE="$(dirname "$0")/watcher_sites.conf"
 
 # The full path to your Python snapshot script.
-PYTHON_SCRIPT_PATH="/root/outageDetectionPy/outage_snapshot.py"
+PYTHON_SCRIPT_PATH="$(dirname "$0")/outage_snapshot.py"
 
 # --- SCRIPT LOGIC ---
 
