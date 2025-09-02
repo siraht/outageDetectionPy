@@ -11,6 +11,7 @@ A comprehensive multi-site outage detection and snapshot system for web applicat
   - Application logs (LiteSpeed access/error, PHP-FPM slow logs)
   - Configuration files (LiteSpeed virtual host and main configs, PHP-FPM configs, LSPHP configs)
   - **File modification tracking**: Identifies and copies all files modified during outage windows
+  - **Automated WordPress Debug Logging**: Automatically enables `WP_DEBUG` and `WP_DEBUG_LOG` during an outage for WordPress sites and collects the `debug.log`.
 - **Structured reporting**: Generates timestamped reports with JSON summaries
 - **Logging**: Per-site logging with timestamps for audit trails
 - **LiteSpeed optimized**: Designed specifically for LiteSpeed web server environments
@@ -160,6 +161,7 @@ When an outage ends, the system collects:
 - **LiteSpeed Access Logs**: HTTP requests during outage period (from both RunCloud and LiteSpeed log locations)
 - **LiteSpeed Error Logs**: Server errors and warnings
 - **PHP-FPM Slow Logs**: Slow PHP processes (if enabled)
+- **WordPress Debug Logs**: If a `wp-config.php` is detected, the system will automatically enable `WP_DEBUG` and `WP_DEBUG_LOG` for the duration of the outage and collect the resulting `debug.log` from `wp-content/debug.log`. Debugging is automatically disabled once the site recovers.
 
 #### Configuration Files
 - **LiteSpeed Virtual Host Configuration**: Site-specific LiteSpeed virtual host config
@@ -185,6 +187,7 @@ Reports are generated in `/home/runcloud/outage_reports/` with the following str
     ├── litespeed_access_alt.slice.log  # LiteSpeed access logs (LiteSpeed location)
     ├── litespeed_error_alt.slice.log   # LiteSpeed error logs (LiteSpeed location)
     ├── php_fpm_slow.slice.log          # PHP-FPM slow logs
+    ├── wordpress_debug.slice.log       # WordPress debug logs (if applicable)
     ├── sar_cpu_usage.txt               # CPU performance data
     ├── sar_memory_usage.txt            # Memory performance data
     ├── sar_load_average.txt            # Load average data

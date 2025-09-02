@@ -317,7 +317,12 @@ def main():
         },
         "php_fpm_slow": {
             "path": Path(f"/var/log/php/php{args.php_version}-fpm-slow.log"),
-            "regex": r'^(\[\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}\])',
+            "regex": r'^\[(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2})\]',
+            "format": '%d-%b-%Y %H:%M:%S'
+        },
+        "wordpress_debug": {
+            "path": args.app_path / "wp-content" / "debug.log",
+            "regex": r'^\[(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2}) UTC\]',
             "format": '%d-%b-%Y %H:%M:%S'
         }
     }
